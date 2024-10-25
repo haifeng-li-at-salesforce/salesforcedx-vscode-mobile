@@ -9,7 +9,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DiagnosticProducer } from '../DiagnosticProducer';
 import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver/node';
 import { ASTNode, visit } from 'graphql';
-import { OrgUtils } from '../../utils/orgUtils';
+import { OrgManager } from '../../utils/OrgManager';
 
 const LOCAL_CHANGE_NOT_AWARE_MESSAGE = 'uiapi is misspelled.';
 const SEVERITY = DiagnosticSeverity.Error;
@@ -26,6 +26,7 @@ export class MisspelledUiapi implements DiagnosticProducer<ASTNode> {
     }
 
     validateDocument(
+        orgManager: OrgManager,
         textDocument: TextDocument,
         rootNode: ASTNode
     ): Promise<Diagnostic[]> {

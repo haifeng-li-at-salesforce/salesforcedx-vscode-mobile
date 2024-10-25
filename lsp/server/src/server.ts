@@ -21,7 +21,7 @@ import {
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { validateDocument } from './validateDocument';
-import { OrgUtils } from './utils/orgUtils';
+import { OrgManager } from './utils/OrgManager';
 import { WorkspaceUtils } from './utils/workspaceUtils';
 import { getSettings } from './diagnostic/DiagnosticSettings';
 
@@ -42,6 +42,19 @@ let diagnosticsSettingSection = '';
 // initialize default settings
 let settings = getSettings({});
 const documentCache: Map<string, TextDocument> = new Map();
+
+const orgManager = new OrgManager();
+// Refresh diagnostic when authorized to an org or logout. 
+orgManager.registerOrgAuthChangeListener(
+    {
+        onAuthorized: () => {
+            connection.languages.diagnostics.refresh();
+        },
+        onLogOut: ()=> {
+            connection.languages.diagnostics.refresh();
+        }
+    }
+);
 
 connection.onInitialize((params: InitializeParams) => {
     const workspaceFolders = params.workspaceFolders;
@@ -147,7 +160,7 @@ connection.languages.diagnostics.on(async (params) => {
     if (document !== undefined) {
         return {
             kind: DocumentDiagnosticReportKind.Full,
-            items: await validateDocument(settings, document, extensionTitle)
+            items: await validateDocument(orgManager, settings, document, extensionTitle)
         } satisfies DocumentDiagnosticReport;
     } else {
         // We don't know the document. We can either try to read it from disk
@@ -159,10 +172,8 @@ connection.languages.diagnostics.on(async (params) => {
     }
 });
 
-// Watch SF config file change
-OrgUtils.watchConfig();
 connection.onExit(function () {
-    OrgUtils.unWatchConfig();
+    orgManager.cleanup();
 });
 
 connection.onCodeAction((params) => {

@@ -9,13 +9,13 @@
 import type { ASTNode, FieldNode, OperationDefinitionNode } from 'graphql';
 
 import { visit, Kind } from 'graphql';
-import { OrgUtils } from './orgUtils';
-import { FieldRepresentation, ObjectInfoRepresentation } from '../types';
+import { FieldRepresentation, ObjectInfo } from '../types';
+import { OrgManager } from './OrgManager';
 
 const MAX_ALLOWED_SIZE = 200;
 
 /**
- * Represents an entity node from graphql with total size, and child field grapql ql node.  
+ * Represents an entity node from graphql with total size, and child field grapql ql node.
  */
 export interface EntityNode {
     // The graphql ast node
@@ -24,7 +24,7 @@ export interface EntityNode {
     name: string | undefined;
     // total size of fetched immediate children fields
     size: number | undefined;
-    // Related 
+    // Related
     relationships: Array<RelatedEntity>;
     properties: Array<PropertyNode>;
 }
@@ -41,13 +41,13 @@ export interface RelatedEntity {
     entity: EntityNode | Array<EntityNode>;
 }
 
-// Represents an graphql field node with its pulled from objectInfo. 
+// Represents an graphql field node with its pulled from objectInfo.
 interface PropertyNode {
-    // The field graphql ast node 
+    // The field graphql ast node
     node: FieldNode;
     // The field name
     property: string;
-    // the max size of the field. 
+    // the max size of the field.
     size: number | undefined;
     fieldDefinition?: FieldRepresentation | undefined;
 }
@@ -63,7 +63,7 @@ export interface RootNode {
     operations: Array<OperationNode>;
 }
 
-// Nodes from graphql which doesn't carry information about entity or fields. 
+// Nodes from graphql which doesn't carry information about entity or fields.
 const structureNodeNames = ['uiapi', 'query', 'edges', 'node'];
 
 export type DiagnosticNode =
@@ -186,8 +186,8 @@ export function generateDiagnosticTree(rootASTNode: ASTNode): RootNode {
     return stack.pop() as RootNode;
 }
 
-// The property can be normal property or child relationship. 
-// It is unkwown at the beginning, but can be evaluated when it is child property is added
+// The property can be normal property or child relationship.
+// It is unknown at the beginning, but can be evaluated when it is child property is added
 function handlePropertyWithRelation(
     node: FieldNode,
     parentNode: FieldNode,
@@ -238,19 +238,15 @@ function handlePropertyWithRelation(
     topElement = stack[stack.length - 1] as EntityNode;
     topElement.properties.push(propertyNode);
     stack.push(propertyNode);
-    // const entityNode: EntityNode = {
-    //     node,
-    //     name: undefined,
-    //     size: -1
-    // };
 }
 
 export interface OverSizedDiagnostics {
-    overSizedFields: Array<FieldNode>,
-    overSizedEntities: Array<FieldNode>
+    overSizedFields: Array<FieldNode>;
+    overSizedEntities: Array<FieldNode>;
 }
 
 export async function createDiagnostics(
+    orgManager: OrgManager,
     rootNode: RootNode
 ): Promise<OverSizedDiagnostics> {
     const results: OverSizedDiagnostics = {
@@ -260,20 +256,12 @@ export async function createDiagnostics(
 
     for (const operationNode of rootNode.operations) {
         for (const entityNode of operationNode.entities) {
-            await generateDiagnostic(entityNode, results);
+            await generateDiagnostic(orgManager, entityNode, results);
         }
     }
     return results;
 }
 
-function getFieldSize(
-    objectinfo: ObjectInfoRepresentation,
-    fieldName: string
-): number | undefined {
-    const fieldInfo = objectinfo.fields[fieldName];
-
-    return fieldInfo === undefined ? undefined : fieldInfo.length;
-}
 /**
  * Recursively research for FieldNode with large records.
  * @param entityNode
@@ -281,18 +269,21 @@ function getFieldSize(
  * @returns
  */
 async function generateDiagnostic(
+    orgManager: OrgManager,
     entityNode: EntityNode,
     overSizedDiagnostic: OverSizedDiagnostics
 ) {
     if (entityNode.name) {
-        const objectInfo = await OrgUtils.getObjectInfo(entityNode.name);
+        const objectInfo = await orgManager.objectInfoCache?.getObjectInfo(
+            entityNode.name
+        );
         if (objectInfo === undefined) {
             return;
         }
-        const fieldInfos = objectInfo.fields;
+
         let totalSize = 0;
         for (const propertyNode of entityNode.properties) {
-            const fieldSize = getFieldSize(objectInfo, propertyNode.property);
+            const fieldSize = objectInfo.getFieldSize(propertyNode.property);
 
             propertyNode.size = fieldSize;
 
@@ -303,11 +294,11 @@ async function generateDiagnostic(
                 if (fieldSize > MAX_ALLOWED_SIZE) {
                     overSizedDiagnostic.overSizedFields.push(propertyNode.node);
                 }
-            } 
+            }
         }
         entityNode.size = totalSize;
         if (totalSize > MAX_ALLOWED_SIZE) {
-            overSizedDiagnostic.overSizedEntities.push(entityNode.node)
+            overSizedDiagnostic.overSizedEntities.push(entityNode.node);
         }
 
         for (const relation of entityNode.relationships) {
@@ -323,17 +314,22 @@ async function generateDiagnostic(
                 relation.entity.name = entityName;
             }
 
-            await generateDiagnostic(relation.entity, overSizedDiagnostic);
+            await generateDiagnostic(
+                orgManager,
+                relation.entity,
+                overSizedDiagnostic
+            );
         }
     }
 }
 
 function findEntityName(
-    objectInfo: ObjectInfoRepresentation,
+    objectInfo: ObjectInfo,
     relationship: RelatedEntity
 ): string | undefined {
+    const objInfo = objectInfo.objectInfo;
     if (relationship.relation === Relation.CHILD) {
-        const childRelationships = objectInfo.childRelationships;
+        const childRelationships = objInfo.childRelationships;
         const targetChildRelation = childRelationships.find((childRelation) => {
             return childRelation.relationshipName === relationship.name;
         });
@@ -341,7 +337,7 @@ function findEntityName(
             return targetChildRelation.childObjectApiName;
         }
     } else if (relationship.relation === Relation.PARENT) {
-        const fields = objectInfo.fields;
+        const fields = objInfo.fields;
         for (const key in fields) {
             const fieldInfo = fields[key];
             //Handle parent relationship
@@ -374,75 +370,47 @@ function isPropertyNode(node: DiagnosticNode): node is PropertyNode {
     return 'property' in node;
 }
 
-// This is from 'node' ancestors
-// export function findEntityNodeForNode(
-//     propertyNodeancestors: ReadonlyArray<ASTNode>
-// ): FieldNode {
-//     const parentFieldAncestorIndex = findCloseAncestorWithType(
-//         propertyNodeancestors,
-//         Kind.FIELD
-//     );
-//     if (
-//         parentFieldAncestorIndex === -1 ||
-//         (propertyNodeancestors[parentFieldAncestorIndex] as FieldNode).name
-//             .value !== 'edges'
-//     ) {
-//         throw new Error('No edges node exists');
-//     }
-
-//     const grandParentFieldAncestorIndex = findCloseAncestorWithType(
-//         propertyNodeancestors,
-//         Kind.FIELD,
-//         parentFieldAncestorIndex - 1
-//     );
-
-//     if (grandParentFieldAncestorIndex === -1) {
-//         throw new Error('No entity node exists');
-//     }
-
-//     return propertyNodeancestors[grandParentFieldAncestorIndex] as FieldNode;
-// }
 export function findEntityNodeForProperty(
-    propertyNodeancestors: ReadonlyArray<ASTNode>
+    propertyNodeAncestors: ReadonlyArray<ASTNode>
 ): FieldNode {
     const parentFieldAncestorIndex = findCloseAncestorWithType(
-        propertyNodeancestors,
+        propertyNodeAncestors,
         Kind.FIELD
     );
     if (
         parentFieldAncestorIndex === -1 ||
-        (propertyNodeancestors[parentFieldAncestorIndex] as FieldNode).name
+        (propertyNodeAncestors[parentFieldAncestorIndex] as FieldNode).name
             .value !== 'node'
     ) {
         throw new Error('No parent node exists');
     }
 
     const grandParentFieldAncestorIndex = findCloseAncestorWithType(
-        propertyNodeancestors,
+        propertyNodeAncestors,
         Kind.FIELD,
         parentFieldAncestorIndex - 1
     );
 
     if (
         grandParentFieldAncestorIndex === -1 ||
-        (propertyNodeancestors[grandParentFieldAncestorIndex] as FieldNode).name
+        (propertyNodeAncestors[grandParentFieldAncestorIndex] as FieldNode).name
             .value !== 'edges'
     ) {
         throw new Error('No edges node exists');
     }
 
-    const grandgrandParentFieldAncestorIndex = findCloseAncestorWithType(
-        propertyNodeancestors,
+    const grandGrandParentFieldAncestorIndex = findCloseAncestorWithType(
+        propertyNodeAncestors,
         Kind.FIELD,
         grandParentFieldAncestorIndex - 1
     );
 
-    if (grandgrandParentFieldAncestorIndex === -1) {
+    if (grandGrandParentFieldAncestorIndex === -1) {
         throw new Error('No entity node exists');
     }
 
-    return propertyNodeancestors[
-        grandgrandParentFieldAncestorIndex
+    return propertyNodeAncestors[
+        grandGrandParentFieldAncestorIndex
     ] as FieldNode;
 }
 
@@ -469,13 +437,13 @@ export function isFieldNode(node: ASTNode): node is FieldNode {
 }
 
 function findCloseAncestorWithType(
-    ancesters: ReadonlyArray<ASTNode>,
+    ancestors: ReadonlyArray<ASTNode>,
     type: Kind,
     endIndex?: number
 ): number {
-    const eIndex = endIndex === undefined ? ancesters.length - 1 : endIndex;
+    const eIndex = endIndex === undefined ? ancestors.length - 1 : endIndex;
     for (let i = eIndex; i >= 0; i--) {
-        if (ancesters[i].kind === type) {
+        if (ancestors[i].kind === type) {
             return i;
         }
     }

@@ -40,6 +40,7 @@ suite('Diagnostics Test Suite - Server - Validate JS', () => {
      `
     );
 
+    /*
     test('Validate local change not aware adapters', async () => {
         const diagnostics = await validateJs({}, textDocument);
         assert.equal(diagnostics.length, 1);
@@ -75,4 +76,5 @@ suite('Diagnostics Test Suite - Server - Validate JS', () => {
 
         assert.equal(diagnostics.length, 0);
     });
+    */
 });

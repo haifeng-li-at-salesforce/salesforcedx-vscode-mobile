@@ -39,3 +39,16 @@ export interface ObjectInfoRepresentation {
     themeInfo: any;
     updateable: boolean;
 }
+
+export class ObjectInfo {
+    objectInfo: ObjectInfoRepresentation;
+
+    constructor(objectInfo: ObjectInfoRepresentation) {
+        this.objectInfo = objectInfo;
+    }
+
+    getFieldSize(fieldName: string): number | undefined {
+        const fieldInfo = this.objectInfo.fields[fieldName];
+        return fieldInfo !== undefined? fieldInfo.length : undefined;
+    }
+}

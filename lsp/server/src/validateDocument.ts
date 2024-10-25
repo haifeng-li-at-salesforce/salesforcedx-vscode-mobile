@@ -11,6 +11,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { validateJs } from './validateJs'; 
 import { validateGraphql } from './validateGraphql';
 import { DiagnosticSettings } from './diagnostic/DiagnosticSettings';
+import { OrgManager } from './utils/OrgManager';
 
 /**
  * Validate the document based on its extension type.
@@ -22,6 +23,7 @@ import { DiagnosticSettings } from './diagnostic/DiagnosticSettings';
  * @returns Diagnostic results for the document.
  */
 export async function validateDocument(
+    orgManager: OrgManager,
     setting: DiagnosticSettings,
     document: TextDocument,
     extensionName: string
@@ -32,12 +34,14 @@ export async function validateDocument(
     if (document.languageId === 'javascript') {
         // handles JS rules
         const jsDiagnostics = await validateJs(
+            orgManager,
             setting,
             document
         );
         
         // handle graphql rules
         const graphqlDiagnostics = await validateGraphql(
+            orgManager,
             setting,
             document
         );
