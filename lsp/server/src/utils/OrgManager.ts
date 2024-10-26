@@ -9,6 +9,7 @@ import {
     AuthInfo,
     ConfigAggregator,
     Connection,
+    Org,
     OrgConfigProperties,
     StateAggregator
 } from '@salesforce/core';
@@ -17,9 +18,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorkspaceUtils } from './workspaceUtils';
 import { ObjectInfoCache } from '../objectInfo/ObjectInfoCache';
+import { ObjectInfo } from '../types';
+
+type UndefinableString = string | undefined;
 
 enum AuthStatus {
-    UNKNOWN,
     AUTHORIZED,
     UNAUTHORIZED
 }
@@ -29,28 +32,75 @@ interface OrgAuthChangeListener {
     onLogOut(): void;
 }
 
-
 /**
  * The full system path to the global sf state folder.
  */
-const SFDX_DIR = path.join(os.homedir(), '.sfdx')
+const SFDX_DIR = path.join(os.homedir(), '.sfdx');
 const SF_DIR = path.join(os.homedir(), '.sf');
+const SF_MOBILE_DIR = '.sfmobile';
+
+class OrgState {
+    connection: Connection;
+    orgName: UndefinableString;
+    userName: UndefinableString;
+    status: AuthStatus;
+
+    constructor(
+        connection: Connection,
+        orgName: UndefinableString,
+        userName: UndefinableString
+    ) {
+        this.connection = connection;
+        this.orgName = orgName;
+        this.userName = userName;
+        this.status =
+            connection !== undefined
+                ? AuthStatus.AUTHORIZED
+                : AuthStatus.UNAUTHORIZED;
+    }
+
+    isEqual(other?: OrgState): boolean {
+        return (
+            this.orgName === other?.orgName && this.userName === other?.userName
+        );
+    }
+
+    getOrgCacheFolder(): string {
+        if (this.orgName === undefined) {
+            throw Error('Not authorized to org');
+        }
+        return path.join(
+            path.join(WorkspaceUtils.getWorkspaceDir(), SF_MOBILE_DIR),
+            this.orgName
+        );
+    }
+}
+
+let instanceCount = 0;
 
 export class OrgManager {
+    private static instance: OrgManager;
 
-    orgName: string = '';
-    connection: Connection | undefined;
-    authStatus: AuthStatus = AuthStatus.UNKNOWN;
+    orgState: OrgState | undefined;
+
+    // File watcher to detect org authorization or logout
     sfdxDirWatcher: fs.FSWatcher | undefined;
     sfDirWatcher: fs.FSWatcher | undefined;
+    sfWorkSpaceWatcher: fs.FSWatcher | undefined;
 
     objectInfoCache: ObjectInfoCache | undefined;
 
     authChangeListeners: OrgAuthChangeListener[] = [];
 
-    constructor() {
+    private constructor() {
         this.watchConfig();
-        this.onAuthOrgChanged();
+    }
+
+    public static getInstance(): OrgManager {
+        if (this.instance === undefined) {
+            this.instance = new OrgManager();
+        }
+        return this.instance;
     }
 
     registerOrgAuthChangeListener(listener: OrgAuthChangeListener) {
@@ -63,12 +113,18 @@ export class OrgManager {
         );
     }
 
+    public async getObjectInfo(
+        objectApiName: string
+    ): Promise<ObjectInfo | undefined> {
+        return this.objectInfoCache?.getObjectInfo(objectApiName);
+    }
+
     cleanup() {
         this.unWatchConfig();
     }
 
-    // Retrieves default organiztion's name.
-    private async getDefaultOrgName(): Promise<string> {
+    // Retrieves default organization's name.
+    private async getDefaultOrgName(): Promise<string | undefined> {
         const aggregator = await ConfigAggregator.create();
 
         await aggregator.reload();
@@ -78,26 +134,27 @@ export class OrgManager {
         );
 
         if (currentUserConfig.value) {
-            this.orgName = currentUserConfig.value.toString();
-            return Promise.resolve(this.orgName);
+            const orgName = currentUserConfig.value.toString();
+            return Promise.resolve(orgName);
         }
-        return Promise.reject('no org');
+        return undefined;
     }
 
     private async getDefaultUserName(): Promise<string | undefined> {
-        try {
-            const orgName = await this.getDefaultOrgName();
-            const aggregator = await StateAggregator.getInstance();
-            const username = aggregator.aliases.getUsername(orgName);
-            if (username !== null && username !== undefined) {
-                return username;
-            }
-        } catch (error) {
+        const orgName = await this.getDefaultOrgName();
+        if (orgName === undefined) {
             return undefined;
         }
+        const aggregator = await StateAggregator.getInstance();
+        const username = aggregator.aliases.getUsername(orgName);
+        if (username !== null && username !== undefined) {
+            return username;
+        }
+
+        return undefined;
     }
 
-    // Set up file watches on the ~/.sfdx and ~/.sf to detech org authorization change. 
+    // Set up file watches on the ~/.sfdx, ~/.sf and $workspace$/.sf to detect org authorization change or switching authorized orgs.
     private watchConfig() {
         this.sfdxDirWatcher = fs.watch(SFDX_DIR, (eventType, fileName) => {
             this.onAuthOrgChanged();
@@ -105,10 +162,16 @@ export class OrgManager {
         this.sfDirWatcher = fs.watch(SF_DIR, (eventType, fileName) => {
             this.onAuthOrgChanged();
         });
+        this.sfWorkSpaceWatcher = fs.watch(
+            path.join(WorkspaceUtils.getWorkspaceDir(), '.sf'),
+            (eventType, fileName) => {
+                this.onAuthOrgChanged();
+            }
+        );
     }
 
     // Remove the file watches on sfdx and sf directories
-    private  unWatchConfig() {
+    private unWatchConfig() {
         if (this.sfdxDirWatcher !== undefined) {
             this.sfdxDirWatcher.close();
             this.sfdxDirWatcher = undefined;
@@ -119,44 +182,62 @@ export class OrgManager {
         }
     }
 
-    // Get the latest orgAuth status, if status is changed, call corresponding listeners. 
-    private async onAuthOrgChanged() {
+    // Get the latest orgAuth status, if status is changed, call corresponding listeners.
+    public async onAuthOrgChanged() {
         // Get the connection and it's un-authorized status if connection is invalid
+        const orgName = await this.getDefaultOrgName();
+        const userName = await this.getDefaultUserName();
         const connection = await this.getConnection();
-        const status = connection !== undefined? AuthStatus.AUTHORIZED : AuthStatus.UNAUTHORIZED
-        
-        if (status !== this.authStatus) {
-            if (status === AuthStatus.UNAUTHORIZED) {
-                // Authorized -> Unauthorized:  do clean up and call listeners
-                this.connection = undefined;
-                this.objectInfoCache?.cleanup();
-                this.objectInfoCache = undefined;
 
-                this.authChangeListeners.forEach((listener)=>{
-                    listener.onLogOut();
-                });
-            } else {
-                // Unauthorized -> Authorized:  create object info cache and call listeners
-                this.connection = connection;
-                const orgName = await this.getDefaultOrgName();
-                
-                const cacheRootPath = path.join(
-                    WorkspaceUtils.getWorkspaceDir(),
-                    SF_DIR,
-                    orgName
-                );
-    
-                this.objectInfoCache = new ObjectInfoCache(
-                    cacheRootPath,
-                    connection!!
-                );
+        const orgState = new OrgState(connection!!, orgName, userName!!);
 
-                this.authChangeListeners.forEach((listener)=>{
-                    listener.onAuthorized();
-                });
-            }
-            this.authStatus = status;
+        if (orgState.isEqual(this.orgState)) {
+            return;
         }
+
+        // Authorized -> Unauthorized or switch authorized org, do clean up and call listeners
+        if (
+            this.orgState?.status === AuthStatus.AUTHORIZED &&
+            (orgState.status === AuthStatus.UNAUTHORIZED ||
+                !orgState.isEqual(this.orgState))
+        ) {
+            this.doLogoutCleanup(this.orgState);
+            this.orgState = undefined;
+        }
+
+        // Unauthorized -> Authorized, create object info cache and call listeners
+        if (
+            orgState.status === AuthStatus.AUTHORIZED &&
+            (this.orgState === undefined ||
+                this.orgState.status === AuthStatus.UNAUTHORIZED)
+        ) {
+
+            this.objectInfoCache = new ObjectInfoCache(
+                orgState.getOrgCacheFolder(),
+                connection!!
+            );
+
+            this.authChangeListeners.forEach((listener) => {
+                listener.onAuthorized();
+            });
+        }
+        this.orgState = orgState;
+    }
+
+    private doLogoutCleanup(orgState: OrgState) {
+        this.objectInfoCache?.cleanup();
+        this.objectInfoCache = undefined;
+    
+        const cacheFolder = orgState.getOrgCacheFolder();
+        fs.rmSync(cacheFolder, {
+            force: true,
+            recursive: true,
+            maxRetries: 3
+        });
+
+        this.authChangeListeners.forEach((listener) => {
+            listener.onLogOut();
+        });
     }
 
     // Retrieves the Connection which will be used to fetch ObjectInfo remotely.

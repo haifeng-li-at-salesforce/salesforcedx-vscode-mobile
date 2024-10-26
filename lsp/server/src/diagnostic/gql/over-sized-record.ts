@@ -14,7 +14,6 @@ import {
     generateDiagnosticTree,
     createDiagnostics
 } from '../../utils/gqlUtils';
-import { OrgManager } from '../../utils/OrgManager';
 
 const OVER_SIZED_FIELD_MESSAGE =
     'This field’s value could exceed 32 KB. Large data sizes can have a negative performance impact on mobile apps.';
@@ -26,12 +25,11 @@ const SEVERITY = DiagnosticSeverity.Information;
 export const RULE_ID = 'over-sized-field';
 export class OversizedRecord implements DiagnosticProducer<ASTNode> {
     async validateDocument(
-        orgManager: OrgManager,
         textDocument: TextDocument,
         rootNode: ASTNode
     ): Promise<Diagnostic[]> {
         const rootDiagnosticNode = generateDiagnosticTree(rootNode);
-        const rawDiagNodes = await createDiagnostics(orgManager, rootDiagnosticNode);
+        const rawDiagNodes = await createDiagnostics(rootDiagnosticNode);
 
         const { overSizedEntities, overSizedFields } = rawDiagNodes;
 

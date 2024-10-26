@@ -15,7 +15,6 @@ import {
     isTheDiagnosticSuppressed
 } from './diagnostic/DiagnosticSettings';
 import { OversizedRecord as OversizedRequest } from './diagnostic/gql/over-sized-record';
-import { OrgManager } from './utils/OrgManager';
 
 const diagnosticProducers: DiagnosticProducer<ASTNode>[] = [
     new OversizedRequest(),
@@ -26,7 +25,6 @@ const diagnosticProducers: DiagnosticProducer<ASTNode>[] = [
  * @param textDocument
  */
 export async function validateGraphql(
-    orgManager: OrgManager,
     setting: DiagnosticSettings,
     textDocument: TextDocument
 ): Promise<Diagnostic[]> {
@@ -61,7 +59,6 @@ export async function validateGraphql(
             query.body
         );
         const diagnostics = await validateOneGraphQuery(
-            orgManager,
             producers,
             graphqlTextDocument,
             query.body
@@ -83,7 +80,6 @@ export async function validateGraphql(
  * @param graphqlDiagnosticProducers  the collection of graphql rules.
  */
 export async function validateOneGraphQuery(
-    orgManager: OrgManager,
     producers: DiagnosticProducer<ASTNode>[],
     textDocument: TextDocument,
     graphql: string
@@ -93,7 +89,7 @@ export async function validateOneGraphQuery(
         const allResults = await Promise.all(
             producers.map((producer) => {
                 return producer
-                    .validateDocument(orgManager, textDocument, graphqlAstNode)
+                    .validateDocument(textDocument, graphqlAstNode)
                     .then((diagnostics) => {
                         const producerId = producer.getId();
                         diagnostics.forEach((diagnostic) => {

@@ -7,7 +7,6 @@
 
 import { Diagnostic } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { OrgManager } from '../utils/OrgManager';
 
 export interface DiagnosticProducer<T> {
 
@@ -23,7 +22,6 @@ export interface DiagnosticProducer<T> {
      * @returns An array of diagnostics found within ast node.
      */
     validateDocument(
-        orgManager: OrgManager,
         textDocument: TextDocument,
         data: T
     ): Promise<Diagnostic[]>;

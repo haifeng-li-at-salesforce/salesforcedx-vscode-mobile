@@ -246,7 +246,6 @@ export interface OverSizedDiagnostics {
 }
 
 export async function createDiagnostics(
-    orgManager: OrgManager,
     rootNode: RootNode
 ): Promise<OverSizedDiagnostics> {
     const results: OverSizedDiagnostics = {
@@ -256,7 +255,7 @@ export async function createDiagnostics(
 
     for (const operationNode of rootNode.operations) {
         for (const entityNode of operationNode.entities) {
-            await generateDiagnostic(orgManager, entityNode, results);
+            await generateDiagnostic( entityNode, results);
         }
     }
     return results;
@@ -269,12 +268,11 @@ export async function createDiagnostics(
  * @returns
  */
 async function generateDiagnostic(
-    orgManager: OrgManager,
     entityNode: EntityNode,
     overSizedDiagnostic: OverSizedDiagnostics
 ) {
     if (entityNode.name) {
-        const objectInfo = await orgManager.objectInfoCache?.getObjectInfo(
+        const objectInfo = await OrgManager.getInstance().getObjectInfo(
             entityNode.name
         );
         if (objectInfo === undefined) {
@@ -315,7 +313,6 @@ async function generateDiagnostic(
             }
 
             await generateDiagnostic(
-                orgManager,
                 relation.entity,
                 overSizedDiagnostic
             );

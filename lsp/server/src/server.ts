@@ -43,24 +43,30 @@ let diagnosticsSettingSection = '';
 let settings = getSettings({});
 const documentCache: Map<string, TextDocument> = new Map();
 
-const orgManager = new OrgManager();
-// Refresh diagnostic when authorized to an org or logout. 
-orgManager.registerOrgAuthChangeListener(
-    {
-        onAuthorized: () => {
-            connection.languages.diagnostics.refresh();
-        },
-        onLogOut: ()=> {
-            connection.languages.diagnostics.refresh();
-        }
-    }
-);
+let orgManager: OrgManager
 
 connection.onInitialize((params: InitializeParams) => {
     const workspaceFolders = params.workspaceFolders;
 
     // Sets workspace folder to WorkspaceUtils
     WorkspaceUtils.setWorkSpaceFolders(workspaceFolders);
+
+    orgManager = OrgManager.getInstance();
+    // Trigger org manager to initialize org state. 
+    orgManager.onAuthOrgChanged();
+
+    // Register listener to refresh diagnostic when authorized to an org or logout. 
+    orgManager.registerOrgAuthChangeListener(
+        {
+            onAuthorized: () => {
+                connection.languages.diagnostics.refresh();
+            },
+            onLogOut: ()=> {
+                connection.languages.diagnostics.refresh();
+            }
+        }
+    );
+
     extensionTitle = params.initializationOptions?.extensionTitle;
     updateDiagnosticsSettingCommand =
         params.initializationOptions?.updateDiagnosticsSettingCommand;
@@ -160,7 +166,7 @@ connection.languages.diagnostics.on(async (params) => {
     if (document !== undefined) {
         return {
             kind: DocumentDiagnosticReportKind.Full,
-            items: await validateDocument(orgManager, settings, document, extensionTitle)
+            items: await validateDocument(settings, document, extensionTitle)
         } satisfies DocumentDiagnosticReport;
     } else {
         // We don't know the document. We can either try to read it from disk

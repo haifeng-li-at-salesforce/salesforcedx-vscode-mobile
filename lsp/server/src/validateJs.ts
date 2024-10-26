@@ -12,7 +12,6 @@ import { Node } from '@babel/types';
 import { DiagnosticProducer } from './diagnostic/DiagnosticProducer';
 import { AdaptersLocalChangeNotAware } from './diagnostic/js/adapters-local-change-not-aware';
 import { isTheDiagnosticSuppressed, DiagnosticSettings } from './diagnostic/DiagnosticSettings';
-import { OrgManager } from './utils/OrgManager';
 
 const jsDiagnosticProducers: DiagnosticProducer<Node>[] = [
     new AdaptersLocalChangeNotAware()
@@ -24,7 +23,6 @@ const jsDiagnosticProducers: DiagnosticProducer<Node>[] = [
  * @returns An array of diagnostics found within the JavaScript file
  */
 export async function validateJs(
-    orgManager: OrgManager,
     setting: DiagnosticSettings,
     textDocument: TextDocument
 ): Promise<Diagnostic[]> {
@@ -41,7 +39,6 @@ export async function validateJs(
              
                 const producerId = producer.getId()
                 const diagnostics = await producer.validateDocument(
-                    orgManager,
                     textDocument,
                     jsNode
                 );

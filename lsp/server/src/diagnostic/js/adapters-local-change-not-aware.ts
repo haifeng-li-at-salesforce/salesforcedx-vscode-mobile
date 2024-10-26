@@ -10,7 +10,6 @@ import traverse from '@babel/traverse';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DiagnosticProducer } from '../DiagnosticProducer';
 import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver/node';
-import { OrgManager } from '../../utils/OrgManager';
 
 export const LOCAL_CHANGE_NOT_AWARE_MESSAGE =
     'The wire adapter you are using allows you to work offline, but it does not automatically update its records when data is added or removed while you are disconnected.';
@@ -27,13 +26,11 @@ export const RULE_ID = 'adapters-local-change-not-aware';
  * Produce diagnostics for adapter which works offline but doesn't handle local change.
  */
 export class AdaptersLocalChangeNotAware implements DiagnosticProducer<Node> {
-
     getId(): string {
         return RULE_ID;
     }
 
     validateDocument(
-        orgManager: OrgManager,
         textDocument: TextDocument,
         node: Node
     ): Promise<Diagnostic[]> {
