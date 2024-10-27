@@ -9,12 +9,12 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as assert from 'assert';
 import { suite, test } from 'mocha';
 
-import { JSValidator } from '../validator/jsValidator';
+import { JSValidator } from '../../validator/jsValidator';
 import {
     AdaptersLocalChangeNotAware,
     LOCAL_CHANGE_NOT_AWARE_MESSAGE,
     RULE_ID
-} from '../diagnostic/js/adapters-local-change-not-aware';
+} from '../../diagnostic/js/adapters-local-change-not-aware';
 
 suite('Diagnostics Test Suite - Server - JS Validator', () => {
     const jsValidator = new JSValidator();

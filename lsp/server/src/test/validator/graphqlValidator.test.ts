@@ -6,8 +6,8 @@
  */
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { GraphQLValidator } from '../validator/gqlValidator';
-import { MisspelledUiapi } from '../diagnostic/gql/misspelled-uiapi';
+import { GraphQLValidator } from '../../validator/gqlValidator';
+import { MisspelledUiapi } from '../../diagnostic/gql/misspelled-uiapi';
 import * as assert from 'assert';
 import { suite, test } from 'mocha';
 

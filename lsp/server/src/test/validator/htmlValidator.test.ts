@@ -7,9 +7,9 @@
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { suite, test } from 'mocha';
-import { HTMLValidator } from '../validator/htmlValidator';
+import { HTMLValidator } from '../../validator/htmlValidator';
 import * as assert from 'assert';
-import { MobileOfflineFriendly } from '../diagnostic/html/mobileOfflineFriendly';
+import { MobileOfflineFriendly } from '../../diagnostic/html/mobileOfflineFriendly';
 
 suite('Diagnostics Test Suite - Server - HTML Validator', () => {
     const htmlValidator: HTMLValidator = new HTMLValidator();
