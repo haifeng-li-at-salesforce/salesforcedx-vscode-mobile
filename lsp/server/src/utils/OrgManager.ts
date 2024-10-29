@@ -35,7 +35,7 @@ interface OrgAuthChangeListener {
 /**
  * The full system path to the global sf state folder.
  */
-const SFDX_DIR = path.join(os.homedir(), '.sfdx');
+const SFDX_DIR = path.join(os.homedir(), '.sfdx/alias.json');
 const SF_DIR = path.join(os.homedir(), '.sf');
 const SF_MOBILE_DIR = '.sfmobile';
 
@@ -154,18 +154,22 @@ export class OrgManager {
         return undefined;
     }
 
-    // Set up file watches on the ~/.sfdx, ~/.sf and $workspace$/.sf to detect org authorization change or switching authorized orgs.
+    /**
+     * Set up file watches on the below files to detect
+     * 1. ~/.sfdx, ~/.sf: org authorization or logout
+     * 2. $workspace$/.sf/config.json: User could authorize to multiple org and switch among them.
+     */
     private watchConfig() {
         this.sfdxDirWatcher = fs.watch(SFDX_DIR, (eventType, fileName) => {
-            this.onAuthOrgChanged();
+            this.debouncedOnAuthOrgChange();
         });
         this.sfDirWatcher = fs.watch(SF_DIR, (eventType, fileName) => {
-            this.onAuthOrgChanged();
+            this.debouncedOnAuthOrgChange();
         });
         this.sfWorkSpaceWatcher = fs.watch(
-            path.join(WorkspaceUtils.getWorkspaceDir(), '.sf'),
+            path.join(WorkspaceUtils.getWorkspaceDir(), '.sf/config.json'),
             (eventType, fileName) => {
-                this.onAuthOrgChanged();
+                this.debouncedOnAuthOrgChange();
             }
         );
     }
@@ -180,7 +184,13 @@ export class OrgManager {
             this.sfDirWatcher.close();
             this.sfDirWatcher = undefined;
         }
+        if (this.sfWorkSpaceWatcher !== undefined) {
+            this.sfWorkSpaceWatcher.close();
+            this.sfWorkSpaceWatcher === undefined;
+        }
     }
+
+    debouncedOnAuthOrgChange = debounce(this.onAuthOrgChanged);
 
     // Get the latest orgAuth status, if status is changed, call corresponding listeners.
     public async onAuthOrgChanged() {
@@ -195,23 +205,27 @@ export class OrgManager {
             return;
         }
 
-        // Authorized -> Unauthorized or switch authorized org, do clean up and call listeners
+        // Authorized -> Unauthorized: do clean up and call listeners
         if (
             this.orgState?.status === AuthStatus.AUTHORIZED &&
-            (orgState.status === AuthStatus.UNAUTHORIZED ||
-                !orgState.isEqual(this.orgState))
+            orgState.status === AuthStatus.UNAUTHORIZED
         ) {
             this.doLogoutCleanup(this.orgState);
-            this.orgState = undefined;
         }
 
-        // Unauthorized -> Authorized, create object info cache and call listeners
+        // Unauthorized -> Authorized or switch org: create object info cache and call listeners
         if (
-            orgState.status === AuthStatus.AUTHORIZED &&
-            (this.orgState === undefined ||
-                this.orgState.status === AuthStatus.UNAUTHORIZED)
+            // Unauthorized -> Authorized
+            ((this.orgState === undefined ||
+                this.orgState.status === AuthStatus.UNAUTHORIZED) &&
+                orgState.status === AuthStatus.AUTHORIZED) ||
+            // switch org
+            (this.orgState !== undefined &&
+                this.orgState.status === AuthStatus.AUTHORIZED &&
+                orgState !== undefined &&
+                orgState.status === AuthStatus.AUTHORIZED &&
+                !orgState.isEqual(this.orgState))
         ) {
-
             this.objectInfoCache = new ObjectInfoCache(
                 orgState.getOrgCacheFolder(),
                 connection!!
@@ -227,7 +241,7 @@ export class OrgManager {
     private doLogoutCleanup(orgState: OrgState) {
         this.objectInfoCache?.cleanup();
         this.objectInfoCache = undefined;
-    
+
         const cacheFolder = orgState.getOrgCacheFolder();
         fs.rmSync(cacheFolder, {
             force: true,
@@ -255,3 +269,12 @@ export class OrgManager {
         return undefined;
     }
 }
+
+const debounce = (fn: Function, ms = 1000) => {
+    let count = 0;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    return function (this: any, ...args: any[]) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), ms);
+    };
+};
