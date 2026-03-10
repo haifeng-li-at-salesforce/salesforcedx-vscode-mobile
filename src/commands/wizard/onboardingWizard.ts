@@ -14,7 +14,7 @@ import { AuthorizeCommand } from './authorizeCommand';
 import { InstructionsWebviewProvider } from '../../webviews/instructions';
 import { LwcGenerationCommand } from './lwcGenerationCommand';
 
-const wizardCommand = 'salesforcedx-vscode-offline-app.onboardingWizard';
+export const wizardCommand = 'salesforcedx-vscode-offline-app.onboardingWizard';
 const onboardingWizardStateKey =
     'salesforcedx-vscode-offline-app.onboardingWizard.projectCreationState';
 
@@ -56,7 +56,7 @@ export function onActivate(context: vscode.ExtensionContext) {
 }
 
 export function registerCommand(context: vscode.ExtensionContext) {
-    vscode.commands.registerCommand(
+    const disposable = vscode.commands.registerCommand(
         wizardCommand,
         async (fromPostProjectConfiguration: boolean = false) => {
             if (fromPostProjectConfiguration) {
@@ -93,4 +93,5 @@ export function registerCommand(context: vscode.ExtensionContext) {
             }
         }
     );
+    context.subscriptions.push(disposable);
 }

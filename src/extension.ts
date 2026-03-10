@@ -10,13 +10,20 @@
 import * as vscode from 'vscode';
 import * as onboardingWizard from './commands/wizard/onboardingWizard';
 import * as configureLintingToolsCommand from './commands/lint/configureLintingToolsCommand';
+import * as settingsCommand from './commands/settings/settings';
 import { CoreExtensionService } from './services/CoreExtensionService';
 import { WorkspaceUtils } from './utils/workspaceUtils';
+import * as lspClient from './lsp/client/client';
+
+import {
+    SECTION_DIAGNOSTICS,
+    getUpdateDiagnosticsSettingCommand
+} from './commands/settings/settings';
 
 export function activate(context: vscode.ExtensionContext) {
     // We need to do this first in case any other services need access to those provided by the core extension
     try {
-        CoreExtensionService.loadDependencies();
+        CoreExtensionService.loadDependencies(context);
     } catch (err) {
         console.error(err);
         vscode.window.showErrorMessage(
@@ -36,9 +43,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     onboardingWizard.registerCommand(context);
     onboardingWizard.onActivate(context);
+    settingsCommand.registerCommand(context);
 
     configureLintingToolsCommand.registerCommand(context);
+
+    const command = getUpdateDiagnosticsSettingCommand(context);
+
+    // Enable LSP only if opened workspace is a sfdx project.
+    if (WorkspaceUtils.isSfdxProjectOpened()) {
+        lspClient.activate(context, command, SECTION_DIAGNOSTICS);
+    }
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+    lspClient.deactivate();
+}
